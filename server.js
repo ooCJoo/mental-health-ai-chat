@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -6,10 +7,14 @@ const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Serve static files
+app.use(express.static('public'));
 
-// Replace with your DeepSeek API key (store in environment variables!)
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+// Updated system prompt for mental health
+const SYSTEM_PROMPT = `You are a compassionate mental health companion. Provide:
+1. Empathetic, non-judgmental responses
+2. General coping strategies (e.g., breathing exercises)
+3. NEVER give medical advice
+4. Always suggest consulting a professional`;
 
 app.post('/api/chat', async (req, res) => {
   try {
@@ -18,23 +23,22 @@ app.post('/api/chat', async (req, res) => {
       {
         model: "deepseek-chat",
         messages: [
-          {
-            role: "system",
-            content: "You are a compassionate mental health companion. Provide empathetic, non-judgmental responses. Avoid medical advice."
-          },
+          { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: req.body.message }
-        ]
+        ],
+        temperature: 0.7
       },
       {
         headers: { 
-          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+          'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
           'Content-Type': 'application/json'
         }
       }
     );
     res.json({ reply: response.data.choices[0].message.content });
   } catch (error) {
-    res.status(500).json({ reply: "I'm here to listen. Could you clarify?" });
+    console.error('API Error:', error.response?.data || error.message);
+    res.status(500).json({ reply: "I'm here to listen. Could you share more?" });
   }
 });
 
