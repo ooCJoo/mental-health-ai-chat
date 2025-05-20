@@ -8,8 +8,25 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Configure middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://mental-health-ai-chatbot.vercel.app',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
+
+app.use('/api/chat', (req, res, next) => {
+  if (!process.env.DEEPSEEK_API_KEY) {
+    console.error('API Key check failed: Key missing');
+    return res.status(500).json({ 
+      reply: "Service temporarily unavailable. Please try again later."
+    });
+  }
+  next();
+});
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -155,3 +172,5 @@ app.listen(port, () => {
 
 // Export for Vercel serverless function
 module.exports = app;
+
+app.disable('x-powered-by');

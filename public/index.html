@@ -88,6 +88,22 @@
         }
     </style>
 </head>
+
+<!-- Add after header in index.html -->
+<div id="extension-warning" style="display: none; color: red; padding: 10px; text-align: center;">
+  Please disable ad blockers for this site to ensure proper functionality.
+</div>
+
+<script>
+  // Add at end of existing script
+  window.addEventListener('load', () => {
+    if (window.origin !== 'https://mental-health-ai-chatbot.vercel.app') {
+      document.getElementById('extension-warning').style.display = 'block';
+    }
+  });
+</script>
+
+
 <body>
     <header>
         <h1>Mental Health Companion</h1>
