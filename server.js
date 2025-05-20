@@ -18,117 +18,161 @@ const SYSTEM_PROMPT = `You are a compassionate mental health companion. Provide:
 3. NEVER give medical advice
 4. Always suggest consulting a professional`;
 
-// Validate API key on startup
-if (!process.env.DEEPSEEK_API_KEY) {
-  console.error('⚠️ WARNING: DEEPSEEK_API_KEY is missing in environment variables');
-  console.error('Please create a .env file with your API key');
-}
+// Debug info on startup
+console.log('Starting server...');
+console.log('Environment variables check:');
+console.log('- NODE_ENV:', process.env.NODE_ENV);
+console.log('- API Key configured:', !!process.env.DEEPSEEK_API_KEY);
 
-// Retry mechanism for API calls
-async function callWithRetry(apiCall, maxRetries = 3) {
-  let lastError;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await apiCall();
-    } catch (error) {
-      console.log(`Attempt ${attempt} failed. ${attempt < maxRetries ? 'Retrying...' : 'No more retries.'}`);
-      lastError = error;
-      
-      if (attempt < maxRetries) {
-        // Wait with exponential backoff (300ms, 900ms, 2700ms)
-        await new Promise(resolve => setTimeout(resolve, 300 * Math.pow(3, attempt - 1)));
-      }
-    }
-  }
-  
-  throw lastError;
-}
-
-// Chat endpoint
+// Chat endpoint with enhanced debugging
 app.post('/api/chat', async (req, res) => {
+  console.log('Chat request received');
+  
   // Validate request
-  if (!req.body.message) {
-    return res.status(400).json({ error: 'No message provided', reply: "I didn't catch that. Could you please try again?" });
+  if (!req.body || !req.body.message) {
+    console.log('Invalid request: Missing message');
+    return res.status(400).json({ 
+      error: 'No message provided',
+      reply: "I didn't catch what you said. Could you please try again?" 
+    });
   }
 
-  console.log(`📩 Request received: "${req.body.message.substring(0, 30)}${req.body.message.length > 30 ? '...' : ''}"`);
+  // Log truncated message for privacy
+  const truncatedMsg = req.body.message.substring(0, 20) + 
+    (req.body.message.length > 20 ? '...' : '');
+  console.log(`Processing message: "${truncatedMsg}"`);
+  
+  // Check API key at request time
+  if (!process.env.DEEPSEEK_API_KEY) {
+    console.error('ERROR: DEEPSEEK_API_KEY is missing');
+    return res.status(500).json({ 
+      error: 'API key missing',
+      reply: "I'm having configuration issues. Please contact support." 
+    });
+  }
   
   try {
-    console.log('🔄 Sending request to DeepSeek API...');
+    console.log('Calling DeepSeek API...');
     
-    const apiResponse = await callWithRetry(async () => {
-      return await axios.post(
-        'https://api.deepseek.com/v1/chat/completions',
-        {
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: req.body.message }
-          ],
-          temperature: 0.7
-        },
-        {
-          headers: { 
-            'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000 // 10 second timeout
-        }
-      );
+    const response = await axios({
+      method: 'post',
+      url: 'https://api.deepseek.com/v1/chat/completions',
+      headers: { 
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: req.body.message }
+        ],
+        temperature: 0.7
+      },
+      timeout: 15000 // 15 second timeout
     });
     
-    console.log('✅ DeepSeek API response received successfully');
-    const botReply = apiResponse.data.choices[0].message.content;
-    console.log(`🤖 Bot reply: "${botReply.substring(0, 30)}${botReply.length > 30 ? '...' : ''}"`);
+    console.log('DeepSeek API response received');
     
-    res.json({ reply: botReply });
-  } catch (error) {
-    console.error('❌ API Error:');
-    
-    if (error.response) {
-      // The server responded with an error status code
-      console.error(`Status code: ${error.response.status}`);
-      console.error('Response data:', error.response.data);
-      
-      if (error.response.status === 401) {
-        console.error('Authentication error. Please check your API key.');
-      } else if (error.response.status === 429) {
-        console.error('Rate limit exceeded. Please slow down your requests.');
-      }
-    } else if (error.request) {
-      // No response received from the server
-      console.error('No response received from API. The service might be down or network issues occurred.');
-      console.error('Request details:', error.request._currentUrl || 'unknown URL');
-    } else {
-      // Error setting up the request
-      console.error(`Request setup error: ${error.message}`);
+    // Check if response contains expected data
+    if (!response.data || !response.data.choices || 
+        !response.data.choices[0] || !response.data.choices[0].message) {
+      console.error('Unexpected API response format:', JSON.stringify(response.data));
+      throw new Error('Invalid API response format');
     }
     
-    // Send appropriate error message back to client
+    const botReply = response.data.choices[0].message.content;
+    res.json({ reply: botReply });
+    
+  } catch (error) {
+    console.error('API Error:');
+    
+    // Detailed error logging
+    if (error.response) {
+      console.error(`Status: ${error.response.status}`);
+      console.error('Response:', JSON.stringify(error.response.data));
+      
+      // Handle common error codes
+      if (error.response.status === 401) {
+        return res.status(500).json({ 
+          reply: "Authentication error. Please check your API configuration." 
+        });
+      } else if (error.response.status === 429) {
+        return res.status(500).json({ 
+          reply: "I'm experiencing high demand right now. Please try again shortly." 
+        });
+      }
+    } else if (error.request) {
+      console.error('No response received');
+      console.error('Request:', error.request.method, error.request.path);
+    } else {
+      console.error('Error message:', error.message);
+    }
+    
+    // General error response
     res.status(500).json({ 
-      reply: "I'm having trouble connecting to my services right now. Please try again in a moment."
+      reply: "Sorry, I'm having trouble connecting. Please try again later." 
     });
   }
 });
 
-// Health check endpoint
+// Health check endpoint with detailed information
 app.get('/api/health', (req, res) => {
   const apiKeyStatus = process.env.DEEPSEEK_API_KEY ? 'configured' : 'missing';
+  
   res.json({ 
     status: 'ok', 
     message: 'Server is running',
+    environment: process.env.NODE_ENV || 'development',
     apiKeyStatus,
     serverTime: new Date().toISOString()
   });
 });
 
+// Add a debug endpoint to check configuration
+app.get('/api/debug', (req, res) => {
+  // Don't expose sensitive info, just configuration status
+  res.json({
+    environment: process.env.NODE_ENV || 'development',
+    apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
+    apiKeyLength: process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.length : 0,
+    apiKeyPrefix: process.env.DEEPSEEK_API_KEY ? 
+      process.env.DEEPSEEK_API_KEY.substring(0, 3) + '...' : 'N/A',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Start the server
 app.listen(port, () => {
-  console.log(`
-🚀 Server started successfully!
-🌐 Server running at http://localhost:${port}
-🔑 API Key status: ${process.env.DEEPSEEK_API_KEY ? 'Configured ✅' : 'MISSING ❌'}
-📝 System prompt configured for mental health companion
-  `);
+  console.log(`Server running on port ${port}`);
+});
+
+// Export for Vercel serverless function
+module.exports = app;
+
+
+
+
+
+
+
+
+// Update your server.js to add more debugging information
+// Add this near the top of your server.js file
+
+// Debug environment variables
+console.log('Environment check:');
+console.log('- DEEPSEEK_API_KEY exists:', !!process.env.DEEPSEEK_API_KEY);
+if (process.env.DEEPSEEK_API_KEY) {
+  // Only show first few characters for security
+  console.log('- Key starts with:', process.env.DEEPSEEK_API_KEY.substring(0, 3) + '...');
+}
+
+// Update the chat endpoint to log more information
+app.post('/api/chat', async (req, res) => {
+  // Add this at the beginning of your handler
+  console.log('Chat request received');
+  console.log('Environment in request:', !!process.env.DEEPSEEK_API_KEY);
+  
+  // Rest of your handler code...
 });
