@@ -3,13 +3,16 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Configure middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Mental health system prompt
 const SYSTEM_PROMPT = `You are a compassionate mental health companion. Provide:
@@ -20,11 +23,10 @@ const SYSTEM_PROMPT = `You are a compassionate mental health companion. Provide:
 
 // Debug info on startup
 console.log('Starting server...');
-console.log('Environment variables check:');
-console.log('- NODE_ENV:', process.env.NODE_ENV);
-console.log('- API Key configured:', !!process.env.DEEPSEEK_API_KEY);
+console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+console.log(`API Key configured: ${!!process.env.DEEPSEEK_API_KEY}`);
 
-// Chat endpoint with enhanced debugging
+// Chat endpoint
 app.post('/api/chat', async (req, res) => {
   console.log('Chat request received');
   
@@ -37,10 +39,7 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 
-  // Log truncated message for privacy
-  const truncatedMsg = req.body.message.substring(0, 20) + 
-    (req.body.message.length > 20 ? '...' : '');
-  console.log(`Processing message: "${truncatedMsg}"`);
+  console.log(`Processing message: "${req.body.message.substring(0, 20)}..."`);
   
   // Check API key at request time
   if (!process.env.DEEPSEEK_API_KEY) {
@@ -69,7 +68,7 @@ app.post('/api/chat', async (req, res) => {
         ],
         temperature: 0.7
       },
-      timeout: 15000 // 15 second timeout
+      timeout: 8000 // 8 second timeout for Vercel
     });
     
     console.log('DeepSeek API response received');
@@ -90,7 +89,7 @@ app.post('/api/chat', async (req, res) => {
     // Detailed error logging
     if (error.response) {
       console.error(`Status: ${error.response.status}`);
-      console.error('Response:', JSON.stringify(error.response.data));
+      console.error('Response data:', error.response.data);
       
       // Handle common error codes
       if (error.response.status === 401) {
@@ -104,7 +103,6 @@ app.post('/api/chat', async (req, res) => {
       }
     } else if (error.request) {
       console.error('No response received');
-      console.error('Request:', error.request.method, error.request.path);
     } else {
       console.error('Error message:', error.message);
     }
@@ -116,30 +114,38 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Health check endpoint with detailed information
+// Health check endpoint
 app.get('/api/health', (req, res) => {
-  const apiKeyStatus = process.env.DEEPSEEK_API_KEY ? 'configured' : 'missing';
-  
   res.json({ 
     status: 'ok', 
     message: 'Server is running',
     environment: process.env.NODE_ENV || 'development',
-    apiKeyStatus,
+    apiKeyStatus: process.env.DEEPSEEK_API_KEY ? 'configured' : 'missing',
     serverTime: new Date().toISOString()
   });
 });
 
-// Add a debug endpoint to check configuration
+// Debug endpoint
 app.get('/api/debug', (req, res) => {
-  // Don't expose sensitive info, just configuration status
   res.json({
     environment: process.env.NODE_ENV || 'development',
     apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
     apiKeyLength: process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.length : 0,
     apiKeyPrefix: process.env.DEEPSEEK_API_KEY ? 
       process.env.DEEPSEEK_API_KEY.substring(0, 3) + '...' : 'N/A',
+    nodeVersion: process.version,
     timestamp: new Date().toISOString()
   });
+});
+
+// Important: Handle the root route explicitly
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Handle all other routes - send to index.html for client-side routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start the server
@@ -149,30 +155,3 @@ app.listen(port, () => {
 
 // Export for Vercel serverless function
 module.exports = app;
-
-
-
-
-
-
-
-
-// Update your server.js to add more debugging information
-// Add this near the top of your server.js file
-
-// Debug environment variables
-console.log('Environment check:');
-console.log('- DEEPSEEK_API_KEY exists:', !!process.env.DEEPSEEK_API_KEY);
-if (process.env.DEEPSEEK_API_KEY) {
-  // Only show first few characters for security
-  console.log('- Key starts with:', process.env.DEEPSEEK_API_KEY.substring(0, 3) + '...');
-}
-
-// Update the chat endpoint to log more information
-app.post('/api/chat', async (req, res) => {
-  // Add this at the beginning of your handler
-  console.log('Chat request received');
-  console.log('Environment in request:', !!process.env.DEEPSEEK_API_KEY);
-  
-  // Rest of your handler code...
-});
